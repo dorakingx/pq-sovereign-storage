@@ -33,9 +33,12 @@ version.workspace = true
 description = "Post-Quantum Sovereign Privacy Storage workspace bootstrap."
 
 [dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+dotenv = "0.15.0"
 pqsp-core = { path = "core" }
 pqsp-crypto = { path = "crypto" }
 pqsp-storage-client = { path = "storage_client" }
 rand_core.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
