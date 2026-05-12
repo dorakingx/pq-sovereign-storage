@@ -1,0 +1,14 @@
+[package]
+name = "pqsp-core"
+edition.workspace = true
+license.workspace = true
+publish = false
+version.workspace = true
+description = "Core verifier-facing protocol types for sovereign privacy storage."
+
+[dependencies]
+async-trait.workspace = true
+hex.workspace = true
+pqsp-crypto = { path = "../crypto" }
+serde.workspace = true
+thiserror.workspace = true
