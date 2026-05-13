@@ -31,6 +31,25 @@ impl EncryptionKey {
         Self(SecretBox::new(Box::new(bytes)))
     }
 
+    /// Construct a key from a hex string, accepting an optional `0x` prefix.
+    pub fn from_hex(key_hex: &str) -> Result<Self, EncryptionError> {
+        let key_hex = key_hex.strip_prefix("0x").unwrap_or(key_hex);
+        let bytes = hex::decode(key_hex).map_err(EncryptionError::InvalidKeyHex)?;
+
+        if bytes.len() != KEY_BYTES {
+            return Err(EncryptionError::InvalidKeyLength(bytes.len()));
+        }
+
+        let mut key = [0u8; KEY_BYTES];
+        key.copy_from_slice(&bytes);
+        Ok(Self::from_bytes(key))
+    }
+
+    /// Export the key as lowercase hex for operator-controlled backup.
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.expose())
+    }
+
     fn expose(&self) -> &[u8; KEY_BYTES] {
         self.0.expose_secret()
     }
@@ -127,6 +146,12 @@ impl fmt::Debug for EncryptedPayload {
 /// Errors returned by payload encryption and decryption.
 #[derive(Debug, Error)]
 pub enum EncryptionError {
+    /// The provided encryption key was not valid hex.
+    #[error("encryption key must be hex encoded: {0}")]
+    InvalidKeyHex(#[source] hex::FromHexError),
+    /// The provided encryption key had the wrong length.
+    #[error("encryption key must be 32 bytes, got {0} bytes")]
+    InvalidKeyLength(usize),
     /// The payload envelope could not be parsed safely.
     #[error("payload envelope is malformed")]
     MalformedEnvelope,
