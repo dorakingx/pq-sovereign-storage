@@ -151,9 +151,44 @@ fn spinner(message: impl Into<String>) -> ProgressBar {
     pb
 }
 
+fn print_banner() {
+    let logo = [
+        "██████╗  ██████╗ ███████╗██████╗ ",
+        "██╔══██╗██╔═══██╗██╔════╝██╔══██╗",
+        "██████╔╝██║   ██║███████╗██████╔╝",
+        "██╔═══╝ ██║▄▄ ██║╚════██║██╔═══╝ ",
+        "██║     ╚██████╔╝███████║██║     ",
+        "╚═╝      ╚══▀▀═╝ ╚══════╝╚═╝     ",
+    ];
+
+    eprintln!();
+    for (index, line) in logo.iter().enumerate() {
+        let styled = match index {
+            0 | 1 => line.bright_cyan(),
+            2 | 3 => line.bright_magenta(),
+            _ => line.bright_blue(),
+        };
+        eprintln!("{}", styled.bold());
+    }
+    eprintln!(
+        "{}",
+        "Post-Quantum Sovereign Privacy Storage"
+            .bright_white()
+            .bold()
+    );
+    eprintln!(
+        "{}",
+        "0G APAC Hackathon | Track 5: Privacy & Sovereign Infrastructure"
+            .bright_green()
+            .bold()
+    );
+    eprintln!();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
+    print_banner();
 
     let cli = Cli::parse();
     match cli.command {
