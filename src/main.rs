@@ -79,6 +79,14 @@ enum Commands {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Download an encrypted payload from a 0G storage node by Merkle root.
+    Download {
+        /// 0G Storage Merkle root to download.
+        merkle_root: String,
+        /// Optional output path for the downloaded payload.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -120,6 +128,14 @@ struct DecryptCommandOutput {
     input_format: String,
 }
 
+#[derive(Debug, Serialize)]
+struct DownloadCommandOutput {
+    merkle_root: String,
+    request_url: String,
+    output_path: String,
+    downloaded_bytes: usize,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
@@ -158,6 +174,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             out,
         } => {
             run_decrypt(&encrypted_file_path, &key_hex, &aad, out.as_deref()).await?;
+        }
+        Commands::Download { merkle_root, out } => {
+            run_download(&merkle_root, out.as_deref()).await?;
         }
     }
 
@@ -278,6 +297,42 @@ async fn run_decrypt(
     Ok(())
 }
 
+async fn run_download(merkle_root: &str, out_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
+    let node_url = first_storage_node_url().ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::NotFound,
+            "0G_STORAGE_NODE_URL is not configured. Add it to .env before running download.",
+        )
+    })?;
+    let request_url = format!(
+        "{}/file/{}",
+        node_url.trim_end_matches('/'),
+        merkle_root.trim_start_matches('/')
+    );
+    let response = reqwest::get(&request_url).await?.error_for_status()?;
+    let downloaded_bytes = response.bytes().await?;
+    let output_path = out_path
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_download_path(merkle_root));
+
+    if let Some(parent) = output_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    fs::write(&output_path, &downloaded_bytes)?;
+
+    let output = DownloadCommandOutput {
+        merkle_root: merkle_root.to_string(),
+        request_url,
+        output_path: output_path.display().to_string(),
+        downloaded_bytes: downloaded_bytes.len(),
+    };
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
 async fn submit_with_configured_verifier(
     submission: &CommitmentSubmission,
 ) -> Result<(VerificationReceipt, String), Box<dyn Error>> {
@@ -343,6 +398,12 @@ fn parse_node_urls(raw: &str) -> Vec<String> {
         .collect()
 }
 
+fn first_storage_node_url() -> Option<String> {
+    env::var("0G_STORAGE_NODE_URL")
+        .ok()
+        .and_then(|raw| parse_node_urls(&raw).into_iter().next())
+}
+
 fn default_artifact_path(file_path: &Path) -> PathBuf {
     let file_name = file_path
         .file_name()
@@ -357,6 +418,22 @@ fn default_decrypt_path(encrypted_file_path: &Path) -> PathBuf {
         .and_then(|value| value.to_str())
         .unwrap_or("payload");
     encrypted_file_path.with_file_name(format!("{file_name}.decrypted"))
+}
+
+fn default_download_path(merkle_root: &str) -> PathBuf {
+    let file_name = merkle_root
+        .strip_prefix("0x")
+        .unwrap_or(merkle_root)
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    PathBuf::from(format!("{file_name}.json"))
 }
 
 fn parse_encrypted_payload(bytes: &[u8]) -> Result<(EncryptedPayload, String), Box<dyn Error>> {
