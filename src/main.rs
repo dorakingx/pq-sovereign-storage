@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use dotenv::dotenv;
+use indicatif::{ProgressBar, ProgressStyle};
 use pqsp_core::{
     CommitmentSubmission, EvmOnChainVerifier, MockOnChainVerifier, OnChainVerifier,
     VerificationReceipt, VerifierInput,
@@ -20,6 +22,7 @@ use std::{
     fs,
     io::{self, ErrorKind},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 const DEFAULT_AAD: &str = "app=pqsp-cli;purpose=judge-demo";
@@ -136,6 +139,18 @@ struct DownloadCommandOutput {
     downloaded_bytes: usize,
 }
 
+fn spinner(message: impl Into<String>) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template("{spinner:.green} {msg}")
+            .expect("valid spinner template")
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+    );
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb.set_message(message.into());
+    pb
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
@@ -198,8 +213,13 @@ async fn run_upload(
     let encryption_key = EncryptionKey::generate(&mut OsRng);
     let encryption_key_hex = encryption_key.to_hex();
     eprintln!();
-    eprintln!("IMPORTANT: Save this encryption key to decrypt your data:");
-    eprintln!("{encryption_key_hex}");
+    eprintln!(
+        "{}",
+        "IMPORTANT: Save this encryption key to decrypt your data:"
+            .bold()
+            .yellow()
+    );
+    eprintln!("{}", encryption_key_hex.bold().red());
     eprintln!();
 
     let encryptor = XChaCha20Poly1305Encryptor::new(encryption_key);
@@ -207,7 +227,9 @@ async fn run_upload(
     let prover = MockZkProver;
     let storage = ZeroGStorageService::new(config, committer, encryptor);
 
+    let pb = spinner("Encrypting payload and uploading to 0G Storage...");
     let (prepared, upload_receipt) = storage.store(&plaintext, aad.as_bytes(), &prover).await?;
+    pb.finish_with_message("Upload complete!".green().to_string());
     let payload_summary = prepared.upload_payload.summary();
 
     let submission = CommitmentSubmission {
@@ -249,8 +271,17 @@ async fn run_verify(storage_receipt_json: &Path) -> Result<(), Box<dyn Error>> {
     let artifact: VerificationArtifact = serde_json::from_slice(&artifact_bytes)?;
     validate_artifact(&artifact)?;
 
+    let pb = spinner("Submitting proof and commitment to 0G Chain...");
     let (verification_receipt, verifier_mode) =
         submit_with_configured_verifier(&artifact.commitment_submission).await?;
+    pb.finish_with_message("Verification complete!".green().to_string());
+
+    if verification_receipt.accepted {
+        eprintln!("{}", "Commitment accepted by verifier.".green());
+        if let Some(tx_hash) = &verification_receipt.verifier_tx_hash {
+            eprintln!("{} {}", "Transaction hash:".green(), tx_hash.green());
+        }
+    }
 
     let output = VerifyCommandOutput {
         artifact_path: storage_receipt_json.display().to_string(),
@@ -274,6 +305,7 @@ async fn run_decrypt(
     let (encrypted_payload, input_format) = parse_encrypted_payload(&encrypted_bytes)?;
     let encryption_key = EncryptionKey::from_hex(key_hex)?;
     let encryptor = XChaCha20Poly1305Encryptor::new(encryption_key);
+    let pb = spinner("Decrypting sovereign payload...");
     let plaintext = encryptor.decrypt(&encrypted_payload, aad.as_bytes())?;
     let output_path = out_path
         .map(Path::to_path_buf)
@@ -285,6 +317,7 @@ async fn run_decrypt(
         }
     }
     fs::write(&output_path, &plaintext)?;
+    pb.finish_with_message("Plaintext successfully recovered!".bold().green().to_string());
 
     let output = DecryptCommandOutput {
         input_path: encrypted_file_path.display().to_string(),
@@ -309,6 +342,7 @@ async fn run_download(merkle_root: &str, out_path: Option<&Path>) -> Result<(), 
         node_url.trim_end_matches('/'),
         merkle_root.trim_start_matches('/')
     );
+    let pb = spinner("Fetching payload from 0G Storage network...");
     let response = reqwest::get(&request_url).await?.error_for_status()?;
     let downloaded_bytes = response.bytes().await?;
     let output_path = out_path
@@ -321,6 +355,7 @@ async fn run_download(merkle_root: &str, out_path: Option<&Path>) -> Result<(), 
         }
     }
     fs::write(&output_path, &downloaded_bytes)?;
+    pb.finish_with_message("Download complete!".green().to_string());
 
     let output = DownloadCommandOutput {
         merkle_root: merkle_root.to_string(),
