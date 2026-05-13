@@ -8,6 +8,7 @@ description = "Core verifier-facing protocol types for sovereign privacy storage
 
 [dependencies]
 async-trait.workspace = true
+ethers.workspace = true
 hex.workspace = true
 pqsp-crypto = { path = "../crypto" }
 serde.workspace = true
