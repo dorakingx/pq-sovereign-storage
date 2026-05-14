@@ -151,6 +151,44 @@ fn spinner(message: impl Into<String>) -> ProgressBar {
     pb
 }
 
+/// Apply `.env` entries whose keys start with a decimal digit.
+///
+/// The `dotenv` crate (0.15) only accepts keys that start with an ASCII letter or `_`
+/// (`parse_key` rejects digit-leading names). This project uses `0G_*` variables by
+/// convention, so we merge those entries after `dotenv()` so live mode and downloads work.
+fn patch_env_from_dotfile() -> Result<(), io::Error> {
+    let path = Path::new(".env");
+    if !path.is_file() {
+        return Ok(());
+    }
+    let contents = fs::read_to_string(path)?;
+    for raw_line in contents.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = if let Some(rest) = line.strip_prefix("export ") {
+            rest.trim_start()
+        } else {
+            line
+        };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        let first = key.chars().next();
+        if !first.is_some_and(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        env::set_var(key, value);
+    }
+    Ok(())
+}
+
 fn print_banner() {
     let logo = [
         "██████╗  ██████╗ ███████╗██████╗ ",
@@ -188,6 +226,7 @@ fn print_banner() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
+    patch_env_from_dotfile()?;
     print_banner();
 
     let cli = Cli::parse();
