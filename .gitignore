@@ -1,5 +1,6 @@
 # Local secrets — never commit (use `.env.example` as the safe template)
 .env
+**/.env
 
 # Rust build output
 /target

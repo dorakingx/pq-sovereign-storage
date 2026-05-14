@@ -66,36 +66,48 @@ The Solidity contract currently mocks ZK verification for demo purposes. It stil
 - Foundry, if you want to build or deploy the Solidity contract
 - A local `.env` file (from `.env.example`) for live 0G uploads, downloads, and on-chain verification
 
-## Environment setup
+## Environment Setup & Contract Deployment
 
-Judges and contributors should **never** put real private keys in the repository. The repo ships a safe template only.
+Judges and contributors should **never** commit real private keys. The repository only contains `.env.example` as a safe template; your real values live in `.env`, which Git ignores at the repository root and under `contracts/`.
 
-1. Copy the example file to a local file that stays on your machine (and is ignored by Git):
+### 1. Create your local `.env`
 
-   ```bash
-   cp .env.example .env
-   ```
+From the repository root:
 
-2. **Testnet tokens:** Request 0G testnet tokens for your **dedicated hackathon wallet** from the official faucet, for example [0G Testnet Faucet](https://faucet.0g.ai/). See also the [0G testnet overview](https://docs.0g.ai/developer-hub/testnet/testnet-overview) for network details.
+```bash
+cp .env.example .env
+```
 
-3. **Private key:** In `.env`, set `0G_PRIVATE_KEY` to the hex key for that **testnet-only** wallet. Use a throwaway address funded only with testnet assets — **not** a mainnet or production wallet.
+Edit `.env` on your machine only (do not paste keys into issues, chats, or commits).
 
-4. **Verifier address:** After you deploy `PqspVerifier.sol` to 0G testnet, set `PQSP_VERIFIER_CONTRACT_ADDRESS` in `.env` to the deployed contract address so `verify` uses the real EVM path.
+### 2. Fund a dedicated testnet wallet and set `0G_PRIVATE_KEY`
 
-The committed `.env.example` uses the official testnet RPC and storage URLs we selected. Your local `.env` overrides them if you need a different endpoint.
+1. Create or pick a **hackathon-only** wallet that you do **not** use on mainnet or for real funds.
+2. Request **0G testnet** tokens from the official faucet: [0G Testnet Faucet](https://faucet.0g.ai/). For network context, see the [0G testnet overview](https://docs.0g.ai/developer-hub/testnet/testnet-overview).
+3. In `.env`, set `0G_PRIVATE_KEY` to the wallet’s hex private key (`0x…` or raw hex). This key signs CLI transactions and Foundry deployments — treat it like a password and keep it out of Git.
 
-If required variables are missing, the CLI falls back to dry-run storage and mock verification where applicable. The `download` command still needs `0G_STORAGE_NODE_URL`. EVM `verify` needs `PQSP_VERIFIER_CONTRACT_ADDRESS` plus chain RPC and private key.
+### 3. Deploy `PqspVerifier` to 0G testnet (Foundry)
 
-For Foundry deployment, `script/DeployPqspVerifier.s.sol` reads `0G_PRIVATE_KEY` from the environment; pass the RPC with `--rpc-url` (for example `$0G_CHAIN_RPC_URL` after sourcing `.env`).
+The deploy script reads `0G_PRIVATE_KEY` from the **process environment**. Foundry does not automatically load `.env`, so export variables from your root `.env` in the same shell before running `forge` (the snippet below does that safely from the repo root).
+
+After a successful broadcast, copy the **deployed contract address** from the Foundry output or block explorer and set `PQSP_VERIFIER_CONTRACT_ADDRESS` in your root `.env`. The PQSP CLI’s `verify` command uses that value together with `0G_CHAIN_RPC_URL` and `0G_PRIVATE_KEY` for on-chain verification.
+
+```bash
+set -a && source .env && set +a && cd contracts && forge script script/DeployPqspVerifier.s.sol:DeployPqspVerifier --rpc-url https://evmrpc-testnet.0g.ai --broadcast
+```
+
+### 4. Behavior without a full `.env`
+
+If required variables are missing, the CLI falls back to dry-run storage and mock verification where applicable. The `download` command needs `0G_STORAGE_NODE_URL`. On-chain `verify` needs `PQSP_VERIFIER_CONTRACT_ADDRESS` plus chain RPC and private key.
 
 ### Variable reference
 
 | Variable | Purpose |
 | --- | --- |
 | `0G_CHAIN_RPC_URL` | 0G Chain EVM JSON-RPC (live uploads, verification, deploy scripts). |
-| `0G_PRIVATE_KEY` | Signer for transactions (testnet-only wallet). |
+| `0G_PRIVATE_KEY` | Signer for transactions (testnet-only wallet; never mainnet). |
 | `0G_STORAGE_NODE_URL` | 0G Storage node for upload and `download`. |
-| `PQSP_VERIFIER_CONTRACT_ADDRESS` | Deployed `PqspVerifier` for on-chain `verify`. |
+| `PQSP_VERIFIER_CONTRACT_ADDRESS` | Deployed `PqspVerifier` on 0G testnet (paste after deploy). |
 
 ## Rust CLI Usage
 
@@ -258,14 +270,7 @@ cd contracts
 forge build
 ```
 
-Deploy the verifier:
-
-```bash
-cd contracts
-forge script script/DeployPqspVerifier.s.sol:DeployPqspVerifier \
-  --rpc-url "$0G_CHAIN_RPC_URL" \
-  --broadcast
-```
+Deploy the verifier using the exact command and `.env` loading steps in **Environment Setup & Contract Deployment** above.
 
 The contract is located at:
 

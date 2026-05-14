@@ -1,3 +1,6 @@
 cache/
 out/
 broadcast/
+
+# Never commit local secrets (Foundry deploy scripts read 0G_PRIVATE_KEY from the environment).
+.env
