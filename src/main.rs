@@ -11,8 +11,8 @@ use pqsp_crypto::{
     XChaCha20Poly1305Encryptor,
 };
 use pqsp_storage_client::{
-    StorageClient, UploadPayload, UploadPayloadSummary, UploadReceipt, ZeroGStorageConfig,
-    ZeroGStorageService,
+    download_with_indexer, StorageClient, UploadPayload, UploadPayloadSummary, UploadReceipt,
+    ZeroGStorageConfig, ZeroGStorageService,
 };
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
@@ -405,20 +405,6 @@ async fn run_decrypt(
 }
 
 async fn run_download(merkle_root: &str, out_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
-    let node_url = first_storage_node_url().ok_or_else(|| {
-        io::Error::new(
-            ErrorKind::NotFound,
-            "0G_STORAGE_NODE_URL is not configured. Add it to .env before running download.",
-        )
-    })?;
-    let request_url = format!(
-        "{}/file/{}",
-        node_url.trim_end_matches('/'),
-        merkle_root.trim_start_matches('/')
-    );
-    let pb = spinner("Fetching payload from 0G Storage network...");
-    let response = reqwest::get(&request_url).await?.error_for_status()?;
-    let downloaded_bytes = response.bytes().await?;
     let output_path = out_path
         .map(Path::to_path_buf)
         .unwrap_or_else(|| default_download_path(merkle_root));
@@ -428,14 +414,38 @@ async fn run_download(merkle_root: &str, out_path: Option<&Path>) -> Result<(), 
             fs::create_dir_all(parent)?;
         }
     }
-    fs::write(&output_path, &downloaded_bytes)?;
-    pb.finish_with_message("Download complete!".green().to_string());
+
+    let request_url = if let Some(indexer_url) = first_storage_indexer_url() {
+        let pb = spinner("Fetching payload from 0G Storage indexer...");
+        download_with_indexer(&indexer_url, merkle_root, &output_path).await?;
+        pb.finish_with_message("Download complete!".green().to_string());
+        format!("{}/file/{}", indexer_url.trim_end_matches('/'), merkle_root)
+    } else {
+        let node_url = first_storage_node_url().ok_or_else(|| {
+            io::Error::new(
+                ErrorKind::NotFound,
+                "Configure 0G_STORAGE_INDEXER_URL or 0G_STORAGE_NODE_URL before running download.",
+            )
+        })?;
+        let request_url = format!(
+            "{}/file/{}",
+            node_url.trim_end_matches('/'),
+            merkle_root.trim_start_matches('/')
+        );
+        let pb = spinner("Fetching payload from 0G Storage network...");
+        let response = reqwest::get(&request_url).await?.error_for_status()?;
+        let downloaded_bytes = response.bytes().await?;
+        fs::write(&output_path, &downloaded_bytes)?;
+        pb.finish_with_message("Download complete!".green().to_string());
+        request_url
+    };
+    let downloaded_bytes = usize::try_from(fs::metadata(&output_path)?.len())?;
 
     let output = DownloadCommandOutput {
         merkle_root: merkle_root.to_string(),
         request_url,
         output_path: output_path.display().to_string(),
-        downloaded_bytes: downloaded_bytes.len(),
+        downloaded_bytes,
     };
 
     println!("{}", serde_json::to_string_pretty(&output)?);
@@ -472,9 +482,26 @@ async fn submit_with_configured_verifier(
 fn build_storage_config(network: &str) -> (ZeroGStorageConfig, String) {
     let chain_rpc_url = env::var("0G_CHAIN_RPC_URL").ok().filter(|v| !v.trim().is_empty());
     let private_key = env::var("0G_PRIVATE_KEY").ok().filter(|v| !v.trim().is_empty());
+    let indexer_url_env = env::var("0G_STORAGE_INDEXER_URL")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
     let node_url_env = env::var("0G_STORAGE_NODE_URL")
         .ok()
         .filter(|v| !v.trim().is_empty());
+
+    if let (Some(chain_rpc_url), Some(private_key), Some(indexer_url_env)) =
+        (&chain_rpc_url, &private_key, indexer_url_env)
+    {
+        return (
+            ZeroGStorageConfig::live_with_indexer(
+                network.to_string(),
+                chain_rpc_url.to_string(),
+                private_key.to_string(),
+                indexer_url_env,
+            ),
+            "live_with_indexer".to_string(),
+        );
+    }
 
     if let (Some(chain_rpc_url), Some(private_key), Some(node_url_env)) =
         (chain_rpc_url, private_key, node_url_env)
@@ -505,6 +532,13 @@ fn parse_node_urls(raw: &str) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn first_storage_indexer_url() -> Option<String> {
+    env::var("0G_STORAGE_INDEXER_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn first_storage_node_url() -> Option<String> {

@@ -9,7 +9,8 @@ pub mod error;
 pub mod payload;
 
 pub use client::{
-    StorageClient, UploadFinality, UploadMode, ZeroGStorageConfig, ZeroGStorageService,
+    download_with_indexer, StorageClient, UploadFinality, UploadMode, ZeroGStorageConfig,
+    ZeroGStorageService,
 };
 pub use error::StorageClientError;
 pub use payload::{

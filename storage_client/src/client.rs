@@ -1,11 +1,10 @@
 use async_trait::async_trait;
-use ethers::types::U256;
+use ethers::types::{H256, U256};
 use pqsp_core::StorageReceiptRef;
 use pqsp_crypto::{
     PayloadEncryptor, ProofStatement, ProofWitness, StateCommitter, ZkProver,
 };
-use std::io::Write;
-use std::sync::Arc;
+use std::{io::Write, path::Path, sync::Arc};
 use tempfile::NamedTempFile;
 use zg_storage_client::{
     cmd::upload::{FinalityRequirement, UploadOption},
@@ -275,6 +274,25 @@ where
             payload_bytes: prepared.encoded_payload.len(),
         })
     }
+}
+
+/// Download an uploaded payload by Merkle root through the 0G storage indexer.
+pub async fn download_with_indexer(
+    indexer_url: &str,
+    merkle_root: &str,
+    output_path: &Path,
+) -> Result<(), StorageClientError> {
+    let root = merkle_root
+        .parse::<H256>()
+        .map_err(|err| StorageClientError::ZeroGSdk(err.to_string()))?;
+    let indexer = IndexerClient::new(indexer_url)
+        .await
+        .map_err(|err| StorageClientError::ZeroGSdk(err.to_string()))?;
+
+    indexer
+        .download(root, &output_path.to_path_buf(), false)
+        .await
+        .map_err(|err| StorageClientError::ZeroGSdk(err.to_string()))
 }
 
 impl<C, E> ZeroGStorageService<C, E>
