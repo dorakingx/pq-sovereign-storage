@@ -4,3 +4,4 @@
 
 # Rust build output
 /target
+.vercel

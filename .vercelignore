@@ -1,0 +1,14 @@
+.env
+**/.env
+secret.txt
+*.pqsp-receipt.json
+*.decrypted
+target/
+contracts/
+core/
+crypto/
+storage_client/
+src/
+Cargo.toml
+Cargo.lock
+demo.sh
